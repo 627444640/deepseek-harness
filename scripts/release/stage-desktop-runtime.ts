@@ -15,7 +15,7 @@
  */
 
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { delimiter, dirname, join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { isEntry, run } from './process.ts'
 import { packedDependencies } from './tarball.ts'
@@ -34,14 +34,23 @@ const REQUIRED_FILES = [
  * user agent, so the staged tree is what the manifests describe. The harness
  * itself never executes during staging — the desktop app sets its own
  * `DSH_HOME` when it spawns the runtime — so no harness home is redirected.
+ * With `node` set, its directory goes first on `PATH` so install scripts
+ * (`sh -c node ...`) resolve the same binary npm runs under; otherwise a
+ * prebuilt-optional consumer such as koffi probes the prebuilt with the
+ * host-architecture Node, rejects it, and falls into a cross-architecture
+ * source build that cannot link.
+ * @param node - absolute path of the Node the install must run under, if any.
  * @returns The child environment.
  */
-function stagingEnvironment(): NodeJS.ProcessEnv {
+function stagingEnvironment(node: string | undefined): NodeJS.ProcessEnv {
   const environment = { ...process.env }
   delete environment.npm_config_user_agent
   delete environment.NPM_CONFIG_USER_AGENT
   delete environment.NODE_OPTIONS
   delete environment.NODE_PATH
+  if (node !== undefined) {
+    environment.PATH = `${dirname(node)}${delimiter}${environment.PATH ?? ''}`
+  }
   return environment
 }
 
@@ -124,7 +133,7 @@ function main(): void {
   const npm = npmInvocation(values.node)
   run(npm.command, [...npm.args, 'install', '--no-audit', '--no-fund', '--package-lock=false'], {
     cwd: destination,
-    env: stagingEnvironment(),
+    env: stagingEnvironment(values.node),
   })
 
   for (const file of REQUIRED_FILES) {
