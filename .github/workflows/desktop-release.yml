@@ -1,0 +1,211 @@
+# Build the desktop installers: the Electron shell over `dsh web`, the staged
+# harness runtime closure, and the official Node binary the shell spawns.
+#
+# Installers build without credentials on every pull request and master push.
+# A dsh-v* tag publishes them to that tag's GitHub Release — the same release
+# electron-updater inside the app polls for updates. Windows NSIS supports
+# full auto-update; macOS stays notify-only until signing identities exist.
+name: Desktop (dsh)
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+    tags: ['dsh-v*']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the built installers. Must run from a dsh-v* tag; 'draft' uploads to a draft release for rehearsal.
+        required: true
+        type: choice
+        options: [none, draft, release]
+        default: none
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PRIMARY_NODE_VERSION: '24'
+  # The Node series bundled as the runtime the desktop shell spawns; the same
+  # series must install the staged closure so native modules match its ABI.
+  NODE_RUNTIME_SERIES: '24'
+  DSH_TELEMETRY_DISABLED: '1'
+
+jobs:
+  build:
+    name: Build installers (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, macos-15]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # Complete history: the release scripts read tags.
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The desktop package manifest stays 0.0.0 (excluded from the npm
+      # family), so the installer version comes from the tag on releases;
+      # artifact-only CI builds carry a prerelease marker instead.
+      - name: Resolve the installer version
+        id: installer-version
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" == dsh-v* ]]; then
+            version="${GITHUB_REF_NAME#dsh-v}"
+          else
+            version="0.0.0-ci.${GITHUB_SHA::7}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+
+      - name: Configure pnpm store path
+        id: pnpm-store
+        run: |
+          store_root="$HOME/.local/share/pnpm/store"
+          echo "PNPM_CONFIG_STORE_DIR=$store_root" >> "$GITHUB_ENV"
+          store_path=$(PNPM_CONFIG_STORE_DIR="$store_root" pnpm store path --silent)
+          echo "path=$store_path" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache/restore@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-node-${{ env.PRIMARY_NODE_VERSION }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-node-${{ env.PRIMARY_NODE_VERSION }}-pnpm-
+
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run build
+
+      # The staged runtime installs from these tarballs, so a desktop build
+      # exercises the same publish set as Release (dsh) — including the
+      # vendored framework and the Landlock entry, which the registry cannot
+      # resolve for private rescoped packages.
+      - name: Pack release tarballs
+        run: pnpm run release:pack --family dsh --out dist/npm
+
+      - name: Pack the vendored framework
+        run: pnpm run release:pack --family vendor --out dist/npm-vendor
+
+      - name: Pack the Landlock entry
+        run: |
+          pnpm --dir native/landlock-run run build:ts
+          pnpm --dir native/landlock-run/packages/entry pack --pack-destination "$PWD/dist/npm-landlock"
+
+      - name: Bundle the desktop shell
+        run: pnpm --filter @deepseek-ai/dsh-desktop run build
+
+      # Windows is x64-only: stage the closure under the runner's Node and the
+      # official node.exe beside it, then build one NSIS installer.
+      - name: Stage the Node runtime and the runtime closure (win-x64)
+        if: runner.os == 'Windows'
+        run: |
+          base="https://nodejs.org/dist/latest-v${NODE_RUNTIME_SERIES}.x"
+          mkdir -p apps/desktop/node-runtime
+          curl -fsSL -o apps/desktop/node-runtime/node.exe "$base/win-x64/node.exe"
+          apps/desktop/node-runtime/node.exe --version
+          pnpm run release:stage-desktop-runtime \
+            --from dist/npm --from dist/npm-vendor --from dist/npm-landlock \
+            --out apps/desktop/runtime
+
+      - name: Build the Windows installer
+        if: runner.os == 'Windows'
+        run: >-
+          pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --win --arch x64 --publish never
+          --config.extraMetadata.version="${{ steps.installer-version.outputs.version }}"
+
+      # node-pty and koffi resolve binaries for the architecture of the Node
+      # that installs them, so each macOS architecture stages its own closure
+      # under its own official Node and builds right after it. x64 runs first:
+      # the arm64 pass then leaves its latest-mac.yml in place, whose version
+      # is what every notify-only client compares against.
+      - name: Build the macOS installers (x64 then arm64)
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          base="https://nodejs.org/dist/latest-v${NODE_RUNTIME_SERIES}.x"
+          for arch in x64 arm64; do
+            rm -rf apps/desktop/runtime apps/desktop/node-runtime
+            node_dir="$(mktemp -d)"
+            tarball=$(curl -fsSL "$base/SHASUMS256.txt" | grep -o "node-v[0-9.]*-darwin-$arch\.tar\.gz" | head -1)
+            if [[ -z "$tarball" ]]; then
+              echo "no darwin-$arch tarball under $base" >&2
+              exit 1
+            fi
+            curl -fsSL "$base/$tarball" | tar -xz -C "$node_dir" --strip-components=1
+            mkdir -p apps/desktop/node-runtime/bin
+            cp "$node_dir/bin/node" apps/desktop/node-runtime/bin/node
+            PATH="$node_dir/bin:$PATH" pnpm run release:stage-desktop-runtime \
+              --from dist/npm --from dist/npm-vendor --from dist/npm-landlock \
+              --out apps/desktop/runtime
+            pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --mac --arch "$arch" --publish never \
+              --config.extraMetadata.version="${{ steps.installer-version.outputs.version }}"
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-installers-${{ matrix.os }}
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest*.yml
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish installers to the release
+    needs: build
+    if: >-
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/dsh-v')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.publish != 'none')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Require a dsh-v* tag
+        run: |
+          if [[ "$GITHUB_REF_TYPE" != "tag" || "$GITHUB_REF_NAME" != dsh-v* ]]; then
+            echo "::error::publishing desktop installers requires a dsh-v* tag ref" >&2
+            exit 1
+          fi
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-installers-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Upload installers to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # A draft release stays invisible to electron-updater, so a
+          # rehearsal cannot notify installed clients.
+          DRAFT: ${{ github.event_name == 'workflow_dispatch' && inputs.publish == 'draft' }}
+        run: |
+          extra=()
+          if [[ "$DRAFT" == "true" ]]; then extra+=(--draft); fi
+          # rc versions are prereleases; the clients opt in via allowPrerelease.
+          case "$GITHUB_REF_NAME" in *-*) extra+=(--prerelease) ;; esac
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --generate-notes "${extra[@]}"
+          gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" release-assets/* --clobber

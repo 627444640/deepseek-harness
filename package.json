@@ -137,6 +137,7 @@
     "release:verify": "tsx scripts/release/verify.ts",
     "release:pack": "tsx scripts/release/pack.ts",
     "release:verify-packed-install": "tsx scripts/release/verify-packed-install.ts",
+    "release:stage-desktop-runtime": "tsx scripts/release/stage-desktop-runtime.ts",
     "release:publish": "tsx scripts/release/publish.ts",
     "dsh": "node --import tsx/esm apps/cli/src/bin.ts",
     "demo:code-mode": "node scripts/demo-code-mode.mjs",

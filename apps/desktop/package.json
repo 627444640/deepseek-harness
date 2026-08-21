@@ -1,0 +1,26 @@
+{
+  "name": "@deepseek-ai/dsh-desktop",
+  "description": "DeepSeek Harness desktop shell: an Electron window over `dsh web`, with GitHub release update notifications",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist-electron/main/index.cjs",
+  "files": [
+    "dist-electron"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/build.mjs && electron .",
+    "dist": "electron-builder",
+    "dist:dir": "electron-builder --dir"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "devDependencies": {
+    "electron": "^43.4.1",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2"
+  }
+}

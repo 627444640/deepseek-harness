@@ -1,0 +1,15 @@
+{
+  // The desktop shell is its own compiler face: main-process Node code plus
+  // preload/banner DOM code in one project, so DOM libs and Node types are
+  // combined here (host/client aggregates never include these files). Tests
+  // are checked by this project, not by tsconfig.host.json's file set.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src",
+    "tests"
+  ]
+}

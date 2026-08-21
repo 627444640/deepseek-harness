@@ -48,6 +48,26 @@ describe('release families', () => {
     expect(members.map(member => member.name)).not.toContain('@deepseek-ai/dsh-experimental-agent-team')
   })
 
+  it('excludes the desktop app from dsh family discovery', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-release-discovery-'))
+    roots.push(root)
+    write(join(root, 'apps/cli/package.json'), '{"name":"@deepseek-ai/dsh","version":"0.0.1"}')
+    write(join(root, 'apps/desktop/package.json'), '{"name":"@deepseek-ai/dsh-desktop","version":"0.0.0","private":true}')
+
+    // The desktop shell never packs or publishes as an npm tarball, so it must
+    // not surface as a member regardless of the apps/* glob matching it.
+    const members = releaseFamily('dsh').members(root)
+    expect(members.map(entry => entry.directory)).toEqual(['apps/cli'])
+  })
+
+  it('rejects family discovery when every match is excluded', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-release-discovery-'))
+    roots.push(root)
+    write(join(root, 'apps/desktop/package.json'), '{"name":"@deepseek-ai/dsh-desktop","version":"0.0.0","private":true}')
+
+    expect(() => { releaseFamily('dsh').members(root) }).toThrow(/matched no manifests/)
+  })
+
   it('bumps private dsh packages without adding release tags', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-release-version-'))
     roots.push(root)

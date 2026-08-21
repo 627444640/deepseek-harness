@@ -16,14 +16,13 @@
  * checkout cannot stand in for a missing file here.
  */
 
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 import { releaseFamily } from './families.ts'
 import { capture, isEntry } from './process.ts'
-import { packedIdentity } from './tarball.ts'
+import { packedDependencies } from './tarball.ts'
 
 /**
  * Environment for the installed artifact: no host Node hooks, no host DeepSeek
@@ -41,29 +40,6 @@ function consumerEnvironment(consumerRoot: string): NodeJS.ProcessEnv {
   environment.DSH_AGENTS_HOME = resolve(consumerRoot, '.agents')
   environment.DSH_TELEMETRY_DISABLED = '1'
   return environment
-}
-
-/**
- * Every packed tarball in the given directories, as `file:` dependency entries.
- *
- * The directories are read by their contents rather than a pack order file: a
- * directory here can hold tarballs packed only to satisfy a cross-sequence
- * dependency, which no release order describes.
- * @param directories - absolute directories holding packed tarballs.
- * @returns Package name to tarball file URL, and the version each carries.
- */
-function packedDependencies(directories: readonly string[]): Map<string, { url: string; version: string }> {
-  const dependencies = new Map<string, { url: string; version: string }>()
-  for (const directory of directories) {
-    const tarballs = readdirSync(directory).filter(name => name.endsWith('.tgz')).sort()
-    if (tarballs.length === 0) throw new Error(`${directory} holds no packed tarball`)
-    for (const filename of tarballs) {
-      const tarball = join(directory, filename)
-      const { name, version } = packedIdentity(tarball)
-      dependencies.set(name, { url: pathToFileURL(tarball).href, version })
-    }
-  }
-  return dependencies
 }
 
 /** Install every tarball under `--from` and drive the `--family` entry. */

@@ -50,9 +50,18 @@ allowBuilds:
   node-addon-require-builtin: false
   # JSONL durability calls MoveFileExW with write-through publication on Windows.
   koffi: true
+  # Electron's postinstall downloads the platform binary the desktop shell
+  # launches; electron-builder's fetches its packaging helper. Neither runs
+  # arbitrary project code.
+  electron: true
+  electron-builder: true
   # The Python runtime deploy includes the reviewed workspace postinstall that
   # restores the executable bit on node-pty's macOS spawn helper.
   '@deepseek-ai/dsh-subprocess-local@file:packages/subprocess/subprocess-local': true
+  # electron-builder pulls the Squirrel helper in for its legacy Windows target;
+  # the desktop installers build NSIS, so the helper's script is denied and its
+  # absence changes nothing we build.
+  electron-winstaller: false
 
 minimumReleaseAgeExclude:
   # Fresh pi-ai releases carry the model catalog updates that are the whole
@@ -67,6 +76,9 @@ minimumReleaseAgeExclude:
   - node-addon-require-builtin-win32-ia32-msvc@0.1.4
   - node-addon-require-builtin-win32-x64-msvc@0.1.4
   - node-addon-require-builtin@0.1.4
+  # The desktop shell's pinned Electron major; held back for the platform
+  # binary the shell launches rather than floated to whatever is newest.
+  - electron@43.4.1
 
 patchedDependencies:
   node-pty@1.2.0-beta.15: patches/node-pty@1.2.0-beta.15.patch

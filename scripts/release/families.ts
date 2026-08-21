@@ -112,6 +112,14 @@ export abstract class ReleaseFamily {
   /** Glob patterns, relative to the repository root, that select this family's manifests. */
   abstract readonly patterns: readonly string[]
 
+  /**
+   * Repository-relative package directories matched by {@link patterns} that
+   * are not members: never packed, published, version-checked, or bumped. The
+   * desktop shell lives here — it ships as installers from CI, not as an npm
+   * tarball, so the `dsh-v*` tag injects its version instead of reading it.
+   */
+  readonly excludes: readonly string[] = []
+
   /** Git tag prefix this family publishes from. */
   abstract readonly tagPrefix: string
 
@@ -128,13 +136,15 @@ export abstract class ReleaseFamily {
    * @returns Members sorted by directory, with names validated and deduplicated.
    */
   members(root: string): ReleaseMember[] {
+    const excluded = new Set(this.excludes)
     const manifestPaths = globSync([...this.patterns], { cwd: root }).sort()
-    if (manifestPaths.length === 0) throw new Error(`release family ${this.id} matched no manifests`)
 
     const members: ReleaseMember[] = []
     const seen = new Set<string>()
     for (const manifestPath of manifestPaths) {
       const normalized = manifestPath.replaceAll('\\', '/')
+      const directory = normalized.slice(0, normalized.length - '/package.json'.length)
+      if (excluded.has(directory)) continue
       const manifest = readManifest(resolve(root, manifestPath))
       const name = requireString(manifest, 'name', normalized)
       const version = requireString(manifest, 'version', normalized)
@@ -143,12 +153,15 @@ export abstract class ReleaseFamily {
       if (seen.has(name)) throw new Error(`${name} appears twice in release family ${this.id}`)
       seen.add(name)
       members.push({
-        directory: normalized.slice(0, normalized.length - '/package.json'.length),
+        directory,
         name,
         version,
         manifest,
       })
     }
+    // An empty family — no glob matches, or every match excluded — is a
+    // misconfigured release, not a release of nothing.
+    if (members.length === 0) throw new Error(`release family ${this.id} matched no manifests`)
     return members
   }
 
@@ -320,6 +333,7 @@ export abstract class ReleaseFamily {
 class DshFamily extends ReleaseFamily {
   readonly id = 'dsh'
   readonly patterns = ['packages/!(experimental)/*/package.json', 'apps/*/package.json'] as const
+  override readonly excludes = ['apps/desktop'] as const
   readonly tagPrefix = 'dsh-v'
 
   /** Require current artifacts from a complete official client build. */

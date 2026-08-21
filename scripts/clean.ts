@@ -6,6 +6,13 @@ import { repositoryConfigHost } from './ts-project.ts'
 
 const knownOrphanEntries = new Set(['node_modules', 'lib', '.typecheck'])
 
+/**
+ * Build outputs under apps/desktop that no TypeScript project emits: the
+ * esbuild bundles, the staged runtime trees, and electron-builder's
+ * installers. They belong to the desktop package's own scripts.
+ */
+const desktopOutputEntries = ['dist-electron', 'release', 'runtime', 'node-runtime'] as const
+
 function isMissing(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT'
 }
@@ -85,6 +92,10 @@ export class RepositoryCleaner {
     // the sibling runtime bundles, so the complete build output root is removed.
     for (const outputDirectory of this.buildOutputDirectories()) {
       await this.addIfPresent(targets, outputDirectory, canonicalRoot)
+    }
+
+    for (const entry of desktopOutputEntries) {
+      await this.addIfPresent(targets, join(this.root, 'apps/desktop', entry), canonicalRoot)
     }
 
     for (const groupDirectory of await childDirectories(join(this.root, 'packages'))) {

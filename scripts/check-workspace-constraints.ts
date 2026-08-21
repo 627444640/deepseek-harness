@@ -56,11 +56,20 @@ const experimentalPackageNamePrefix = '@deepseek-ai/dsh-experimental-'
 const releaseMemberDirectory = /^(?:packages\/(?!experimental\/)[^/]+\/[^/]+|apps\/[^/]+|vendor\/[^/]+)$/
 
 const localArtifactDirs = new Set(['node_modules'])
+/**
+ * App directories that never publish to npm: excluded from the dsh release
+ * family, so they keep `"private": true` and carry no publish metadata. Their
+ * installers ship from CI instead of the registry.
+ */
+const privateAppDirectories = new Set(['apps/desktop'])
 const appPackageFiles: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh': ['lib/*.js', 'config'],
   // The Web build emits sourcemaps for browser debugging; publishing them is
   // what the payload policy forbids, so the bundle ships without them.
   '@deepseek-ai/dsh-web-frontend': ['dist', '!dist/**/*.map'],
+  // The Electron shell bundles to dist-electron/; the packaged app stages the
+  // harness runtime from release tarballs rather than from this manifest.
+  '@deepseek-ai/dsh-desktop': ['dist-electron'],
 }
 
 /** The subset of package.json fields this constraint check cares about. */
@@ -275,7 +284,7 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
       || manifest.repository.directory !== expectedDirectory) {
       errors.push(`${label}: published Landlock package repository must use ${repositoryUrl} with directory ${expectedDirectory} for trusted publishing`)
     }
-  } else if (releaseMemberDirectory.test(dir)) {
+  } else if (releaseMemberDirectory.test(dir) && !privateAppDirectories.has(dir)) {
     // Release members state that they are publishable: npm refuses a private
     // package, and the repository field is how a consumer finds the source of
     // the package it installed.

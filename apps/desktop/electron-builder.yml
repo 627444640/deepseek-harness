@@ -1,0 +1,36 @@
+# Desktop installer configuration. The harness runtime closure (`runtime/`)
+# and the official Node binary it spawns (`node-runtime/`) are copied as
+# extraResources rather than bundled: the shell never loads harness code into
+# the Electron process, keeping the native modules (node-pty, koffi) on the
+# official-Node ABI they were built for.
+#
+# CI injects the dsh-v* tag version through --config.extraMetadata.version;
+# the manifest version stays 0.0.0 because the desktop package is excluded
+# from the npm release family.
+appId: com.deepseek.dsh
+productName: DeepSeek Harness
+directories:
+  output: release
+files:
+  - dist-electron/**
+extraResources:
+  - from: runtime
+    to: runtime
+  - from: node-runtime
+    to: node-runtime
+win:
+  icon: build/icon.png
+  target: nsis
+nsis:
+  artifactName: ${productName}-Setup-${version}.${ext}
+mac:
+  icon: build/icon.png
+  # zip is the payload electron-updater's version check reads through
+  # latest-mac.yml, even while macOS installs stay notify-only.
+  target: [dmg, zip]
+  category: public.app-category.developer-tools
+  artifactName: ${productName}-${version}-${arch}.${ext}
+publish:
+  provider: github
+  owner: 627444640
+  repo: deepseek-harness

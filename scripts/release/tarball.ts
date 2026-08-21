@@ -6,8 +6,9 @@
  * currently says.
  */
 
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { capture } from './process.ts'
 
 /** Name of the file recording the order in which a packed family uploads. */
@@ -50,4 +51,35 @@ export function packedIdentity(tarball: string): PackedIdentity {
  */
 export function readPublishOrder(directory: string): string[] {
   return readFileSync(join(directory, PUBLISH_ORDER_FILE), 'utf8').split('\n').filter(line => line !== '')
+}
+
+/** One packed tarball as a consumer's dependency entry. */
+export interface PackedDependency {
+  /** `file:` URL of the tarball, for a consumer manifest's dependencies. */
+  readonly url: string
+  /** Version the tarball declares. */
+  readonly version: string
+}
+
+/**
+ * Every packed tarball in the given directories, as `file:` dependency entries.
+ *
+ * The directories are read by their contents rather than a pack order file: a
+ * directory here can hold tarballs packed only to satisfy a cross-sequence
+ * dependency, which no release order describes.
+ * @param directories - absolute directories holding packed tarballs.
+ * @returns Package name to tarball file URL and version.
+ */
+export function packedDependencies(directories: readonly string[]): Map<string, PackedDependency> {
+  const dependencies = new Map<string, PackedDependency>()
+  for (const directory of directories) {
+    const tarballs = readdirSync(directory).filter(name => name.endsWith('.tgz')).sort()
+    if (tarballs.length === 0) throw new Error(`${directory} holds no packed tarball`)
+    for (const filename of tarballs) {
+      const tarball = join(directory, filename)
+      const { name, version } = packedIdentity(tarball)
+      dependencies.set(name, { url: pathToFileURL(tarball).href, version })
+    }
+  }
+  return dependencies
 }
