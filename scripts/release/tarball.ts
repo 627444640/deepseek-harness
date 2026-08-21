@@ -23,12 +23,24 @@ export interface PackedIdentity {
 }
 
 /**
+ * Arguments for a tar read of one tarball. Windows GNU tar parses `D:\...`
+ * paths as a remote `host:path` pair, so it needs `--force-local` there
+ * (bsdtar accepts the flag too, so either tar on PATH works).
+ * @param flags - read flags naming the listing or extraction mode.
+ * @param tarball - absolute tarball path.
+ * @returns The tar argument list.
+ */
+function tarArgs(flags: string, tarball: string): string[] {
+  return process.platform === 'win32' ? ['--force-local', flags, tarball] : [flags, tarball]
+}
+
+/**
  * List a tarball's members.
  * @param tarball - absolute tarball path.
  * @returns Every path inside the archive.
  */
 export function tarballFiles(tarball: string): string[] {
-  return capture('tar', ['-tzf', tarball]).split('\n').filter(line => line !== '')
+  return capture('tar', tarArgs('-tzf', tarball)).split('\n').filter(line => line !== '')
 }
 
 /**
@@ -37,7 +49,7 @@ export function tarballFiles(tarball: string): string[] {
  * @returns The name and version the tarball declares.
  */
 export function packedIdentity(tarball: string): PackedIdentity {
-  const manifest: unknown = JSON.parse(capture('tar', ['-xOzf', tarball, 'package/package.json']))
+  const manifest: unknown = JSON.parse(capture('tar', [...tarArgs('-xOzf', tarball), 'package/package.json']))
   if (manifest === null || typeof manifest !== 'object') throw new Error(`${tarball} has no manifest`)
   const { name, version } = manifest as Record<string, unknown>
   if (typeof name !== 'string' || typeof version !== 'string') throw new Error(`${tarball} manifest lacks name/version`)
