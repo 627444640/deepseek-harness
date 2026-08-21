@@ -92,8 +92,10 @@ jobs:
       - name: Install (immutable)
         run: pnpm install --frozen-lockfile
 
+      # The official profile stamps the client build record rc.8+ release:pack
+      # verifies, alongside the usual lib/types outputs.
       - name: Build
-        run: pnpm run build
+        run: pnpm run build:official
 
       # The staged runtime installs from these tarballs, so a desktop build
       # exercises the same publish set as Release (dsh) — including the
