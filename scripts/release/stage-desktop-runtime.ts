@@ -14,7 +14,7 @@
  */
 
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { isEntry, run } from './process.ts'
 import { packedDependencies } from './tarball.ts'
@@ -42,6 +42,22 @@ function stagingEnvironment(): NodeJS.ProcessEnv {
   delete environment.NODE_OPTIONS
   delete environment.NODE_PATH
   return environment
+}
+
+/**
+ * Resolve how to invoke npm. Windows cannot spawnSync the `npm.cmd` shim, so
+ * the npm-cli.js living in the standard npm layout beside the running Node
+ * executes under `process.execPath` instead; platforms with a resolvable
+ * `npm` on PATH keep the direct name.
+ * @returns The command prefix that invokes npm.
+ */
+function npmInvocation(): { command: string; args: readonly string[] } {
+  if (process.platform === 'win32') {
+    const cli = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js')
+    if (!existsSync(cli)) throw new Error(`stage-desktop-runtime: no npm-cli.js beside ${process.execPath}`)
+    return { command: process.execPath, args: [cli] }
+  }
+  return { command: 'npm', args: [] }
 }
 
 /** Install the packed runtime closure into `--out` and verify the entry files. */
@@ -74,7 +90,8 @@ function main(): void {
   console.log(`release stage-desktop-runtime: installing ${String(packed.size)} tarball(s) into ${destination}`)
   // Optional dependencies are omitted for the Landlock platform packages' sake,
   // as in verify-packed-install; the entry tarball arrives through --from.
-  run('npm', ['install', '--no-audit', '--no-fund', '--package-lock=false', '--omit=optional'], {
+  const npm = npmInvocation()
+  run(npm.command, [...npm.args, 'install', '--no-audit', '--no-fund', '--package-lock=false', '--omit=optional'], {
     cwd: destination,
     env: stagingEnvironment(),
   })

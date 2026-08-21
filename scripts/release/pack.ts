@@ -18,6 +18,20 @@ import { PUBLISH_ORDER_FILE, tarballFiles } from './tarball.ts'
 const DEFAULT_OUTPUT = 'dist/npm'
 
 /**
+ * Re-enter pnpm for member packing. Windows cannot spawnSync the `pnpm.cmd`
+ * shim, so the JavaScript entrypoint from `npm_execpath` runs under this
+ * process's Node instead ([pattern](./run-gates.ts)).
+ * @returns The command prefix that invokes pnpm.
+ */
+function pnpmInvocation(): { command: string; args: readonly string[] } {
+  const entrypoint = process.env.npm_execpath
+  if (entrypoint === undefined || entrypoint === '') {
+    throw new Error('pack: npm_execpath is unavailable; invoke the pack through a pnpm package script.')
+  }
+  return { command: process.execPath, args: [entrypoint] }
+}
+
+/**
  * Pack one member and check what its tarball carries.
  * @param family - the release family being packed.
  * @param member - the member to pack.
@@ -25,7 +39,8 @@ const DEFAULT_OUTPUT = 'dist/npm'
  * @returns The tarball filename.
  */
 function packMember(family: ReleaseFamily, member: ReleaseMember, destination: string): string {
-  run('pnpm', ['--dir', member.directory, 'pack', '--pack-destination', destination])
+  const pnpm = pnpmInvocation()
+  run(pnpm.command, [...pnpm.args, '--dir', member.directory, 'pack', '--pack-destination', destination])
 
   const filename = tarballName(member)
   const tarball = join(destination, filename)
