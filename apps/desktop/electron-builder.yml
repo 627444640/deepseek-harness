@@ -4,6 +4,13 @@
 # the Electron process, keeping the native modules (node-pty, koffi) on the
 # official-Node ABI they were built for.
 #
+# The closure maps from `runtime/node_modules`, not `runtime`: electron-builder
+# (app-builder-lib 26) prunes a source directory's top-level `node_modules` in
+# extraResources copies (util/filter.js rejects the relative path
+# `node_modules` unconditionally), so mapping the parent would ship an empty
+# runtime. The staged package.json manifest serves no purpose at runtime and
+# is not shipped.
+#
 # CI injects the dsh-v* tag version through --config.extraMetadata.version;
 # the manifest version stays 0.0.0 because the desktop package is excluded
 # from the npm release family.
@@ -14,8 +21,8 @@ directories:
 files:
   - dist-electron/**
 extraResources:
-  - from: runtime
-    to: runtime
+  - from: runtime/node_modules
+    to: runtime/node_modules
   - from: node-runtime
     to: node-runtime
 win:
