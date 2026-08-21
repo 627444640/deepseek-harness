@@ -131,15 +131,17 @@ jobs:
       - name: Build the Windows installer
         if: runner.os == 'Windows'
         run: >-
-          pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --win --arch x64 --publish never
+          pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --win --x64 --publish never
           --config.extraMetadata.version="${{ steps.installer-version.outputs.version }}"
 
       # node-pty and koffi resolve binaries for the architecture of the Node
       # that installs them, so each macOS architecture stages its own closure
-      # under its own official Node via --node (a PATH swap would drag tsx and
-      # its esbuild binary under the foreign-architecture Node too). x64 runs
-      # first: the arm64 pass then leaves its latest-mac.yml in place, whose
-      # version is what every notify-only client compares against.
+      # under its own official Node via --node — pointed at the extracted
+      # archive's node, beside which npm lives (only bin/node ships in the
+      # installer); a PATH swap would drag tsx and its esbuild binary under
+      # the foreign-architecture Node too. x64 runs first: the arm64 pass
+      # then leaves its latest-mac.yml in place, whose version is what every
+      # notify-only client compares against.
       - name: Build the macOS installers (x64 then arm64)
         if: runner.os == 'macOS'
         run: |
@@ -158,9 +160,9 @@ jobs:
             cp "$node_dir/bin/node" apps/desktop/node-runtime/bin/node
             pnpm run release:stage-desktop-runtime \
               --from dist/npm --from dist/npm-vendor --from dist/npm-landlock \
-              --node "$PWD/apps/desktop/node-runtime/bin/node" \
+              --node "$node_dir/bin/node" \
               --out apps/desktop/runtime
-            pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --mac --arch "$arch" --publish never \
+            pnpm --filter @deepseek-ai/dsh-desktop exec electron-builder --mac --$arch --publish never \
               --config.extraMetadata.version="${{ steps.installer-version.outputs.version }}"
           done
 
