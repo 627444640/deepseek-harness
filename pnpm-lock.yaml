@@ -10,6 +10,7 @@ overrides:
 
 patchedDependencies:
   node-pty@1.2.0-beta.15: b40ae545608897914bd25fb009c97eeac478c34e8a910298ddcb01b746534bb0
+  electron-updater@6.8.9: 13328b32556f47b2d6b404bfee590a592e21527ffe656bea522a797dc3fbcfed
 
 importers:
 

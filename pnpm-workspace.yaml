@@ -82,3 +82,7 @@ minimumReleaseAgeExclude:
 
 patchedDependencies:
   node-pty@1.2.0-beta.15: patches/node-pty@1.2.0-beta.15.patch
+  # Release tags are `dsh-v<semver>`, but electron-updater's GitHub provider
+  # prerelease-channel matching rejects non-bare-semver tags outright; strip the
+  # prefix so rc-channel clients can discover prerelease updates.
+  electron-updater@6.8.9: patches/electron-updater@6.8.9.patch

@@ -18,6 +18,7 @@ harness 的 GUI 此前只存在于浏览器标签页中的 `dsh web` 之后：�
 - `@deepseek-ai/dsh-desktop` 被排除在 npm release family 之外（`families.ts` 的 `excludes`）：它保持 `"private": true` 与 manifest 版本 `0.0.0`，CI 通过 electron-builder 的 `--config.extraMetadata.version` 注入 `dsh-v*` tag 版本。桌面客户端因此与其捆绑的 harness release 同版本，而无需第二条 release 序列。
 - 更新策略按平台能力在启动时判定：Windows（NSIS）运行完整自动更新；macOS 在 bundle 携带真实代码签名身份前保持仅通知——横幅链接到 release 页面。签名探针要求 `TeamIdentifier` 不是 "not set"，因为无证书时 electron-builder 施加的 ad-hoc 签名能通过 `codesign --verify`，而 Squirrel.Mac 仍拒绝对其更新。
 - 更新事件归约为单一纯快照（`src/shared/update-state.ts`），主进程与 preload 共用；preload 把通知横幅注入页面，`apps/web` 因此无需任何桌面知识。首次检查在启动十秒后运行，每六小时重复一次，帮助菜单提供手动检查。每个 release 都带 rc 预发布段，因此 `allowPrerelease` 保持开启。
+- electron-updater 打了补丁（`patches/electron-updater@6.8.9.patch`，`patchedDependencies`）：其 GitHub provider 在预发布通道匹配时要求 release tag 本身是裸 semver——`allowPrerelease` 开启且当前版本为 `rc` 时会遍历 releases Atom feed，`semver.valid()` 把每个 `dsh-v*` tag 全部丢弃，检查以 `No published versions on GitHub` 失败。补丁只在该遍历内先剥掉 `dsh-v` 前缀再做 semver 校验与通道提取（下载路径仍用完整 tag）。升级 electron-updater 时必须对照新源码重做补丁。
 - [桌面工作流](../../../../.github/workflows/desktop-release.yml) 在每个 pull request 上无凭据构建安装器，并在 `dsh-v*` push 时发布到该 tag 的 release：Windows 一个 NSIS 安装器，macOS 按架构各出 DMG 加 zip（zip 是 electron-updater 经 `latest-mac.yml` 做版本检查读取的载荷，即使 macOS 安装保持仅通知）。
 
 ## 考虑过的替代方案

@@ -1,0 +1,21 @@
+diff --git a/out/providers/GitHubProvider.js b/out/providers/GitHubProvider.js
+index e768d24..871fc45 100644
+--- a/out/providers/GitHubProvider.js
++++ b/out/providers/GitHubProvider.js
+@@ -66,11 +66,14 @@ class GitHubProvider extends BaseGitHubProvider {
+                         }
+                         // This Release's Tag
+                         const hrefTag = hrefElement[1];
+-                        if (!semver.valid(hrefTag)) {
++                        // DeepSeek Harness release tags are `dsh-v<semver>`; strip the
++                        // prefix so prerelease-channel matching accepts them.
++                        const semverTag = hrefTag.replace(/^dsh-v/, "");
++                        if (!semver.valid(semverTag)) {
+                             continue;
+                         }
+                         //Get Channel from this release's tag
+-                        const hrefChannel = ((_c = semver.prerelease(hrefTag)) === null || _c === void 0 ? void 0 : _c[0]) || null;
++                        const hrefChannel = ((_c = semver.prerelease(semverTag)) === null || _c === void 0 ? void 0 : _c[0]) || null;
+                         const shouldFetchVersion = !currentChannel || ["alpha", "beta"].includes(currentChannel);
+                         const isCustomChannel = hrefChannel !== null && !["alpha", "beta"].includes(String(hrefChannel));
+                         // Allow moving from alpha to beta but not down
