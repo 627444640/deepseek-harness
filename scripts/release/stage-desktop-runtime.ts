@@ -8,9 +8,10 @@
  * `release:verify-packed-install` proves on every pull request — because the
  * vendored framework and the Landlock entry are private packages a bare
  * `npm install` cannot resolve from the registry. Native modules (node-pty,
- * koffi) build against the official Node ABI of the installing process, so
- * the caller must stage under the same Node major version the desktop app
- * bundles.
+ * koffi) and the platform binaries behind them follow the architecture of the
+ * installing process, so the caller stages under the same Node series the
+ * desktop app bundles — or passes `--node` to pin the install to the exact
+ * Node binary (an architecture other than the host's needs this).
  */
 
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
@@ -45,17 +46,39 @@ function stagingEnvironment(): NodeJS.ProcessEnv {
 }
 
 /**
+ * Locate npm-cli.js in the standard layouts beside a Node binary: the Windows
+ * installer keeps node_modules/npm beside node.exe, while the macOS and Linux
+ * archives keep it under ../lib/node_modules.
+ * @param node - absolute path of a node executable.
+ * @returns The absolute path of its bundled npm-cli.js.
+ */
+function npmCliBeside(node: string): string {
+  const base = dirname(node)
+  const candidates = [
+    join(base, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    join(base, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+  ]
+  const cli = candidates.find(candidate => existsSync(candidate))
+  if (cli === undefined) throw new Error(`stage-desktop-runtime: no npm-cli.js beside ${node}`)
+  return cli
+}
+
+/**
  * Resolve how to invoke npm. Windows cannot spawnSync the `npm.cmd` shim, so
  * the npm-cli.js living in the standard npm layout beside the running Node
  * executes under `process.execPath` instead; platforms with a resolvable
- * `npm` on PATH keep the direct name.
+ * `npm` on PATH keep the direct name. `node` (from `--node`) pins the whole
+ * install to that binary instead, so optional platform packages and native
+ * builds target its architecture rather than the host's.
+ * @param node - absolute path of the Node the install must run under, if any.
  * @returns The command prefix that invokes npm.
  */
-function npmInvocation(): { command: string; args: readonly string[] } {
+function npmInvocation(node: string | undefined): { command: string; args: readonly string[] } {
+  if (node !== undefined) {
+    return { command: node, args: [npmCliBeside(node)] }
+  }
   if (process.platform === 'win32') {
-    const cli = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js')
-    if (!existsSync(cli)) throw new Error(`stage-desktop-runtime: no npm-cli.js beside ${process.execPath}`)
-    return { command: process.execPath, args: [cli] }
+    return { command: process.execPath, args: [npmCliBeside(process.execPath)] }
   }
   return { command: 'npm', args: [] }
 }
@@ -63,12 +86,16 @@ function npmInvocation(): { command: string; args: readonly string[] } {
 /** Install the packed runtime closure into `--out` and verify the entry files. */
 function main(): void {
   const { values } = parseArgs({
-    options: { from: { type: 'string', multiple: true }, out: { type: 'string' } },
+    options: {
+      from: { type: 'string', multiple: true },
+      out: { type: 'string' },
+      node: { type: 'string' },
+    },
     allowPositionals: false,
   })
   if (values.from === undefined || values.from.length === 0 || values.out === undefined) {
     throw new Error(
-      'usage: stage-desktop-runtime.ts --from <packed directory> [--from ...] --out <staging directory>',
+      'usage: stage-desktop-runtime.ts --from <packed directory> [--from ...] --out <staging directory> [--node <node binary>]',
     )
   }
 
@@ -88,10 +115,14 @@ function main(): void {
   }, null, 2)}\n`)
 
   console.log(`release stage-desktop-runtime: installing ${String(packed.size)} tarball(s) into ${destination}`)
-  // Optional dependencies are omitted for the Landlock platform packages' sake,
-  // as in verify-packed-install; the entry tarball arrives through --from.
-  const npm = npmInvocation()
-  run(npm.command, [...npm.args, 'install', '--no-audit', '--no-fund', '--package-lock=false', '--omit=optional'], {
+  // Optional dependencies stay enabled: koffi and node-pty ship their Windows
+  // and macOS binaries as platform optionals (@koromix/koffi-*,
+  // node-addon-require-builtin-*), and omitting them forces source builds no
+  // desktop target can complete. The Landlock linux optionals resolve nowhere
+  // off-repo, and npm treats an unresolvable optional as a skip, so they stay
+  // harmless where verify-packed-install omits them outright.
+  const npm = npmInvocation(values.node)
+  run(npm.command, [...npm.args, 'install', '--no-audit', '--no-fund', '--package-lock=false'], {
     cwd: destination,
     env: stagingEnvironment(),
   })
