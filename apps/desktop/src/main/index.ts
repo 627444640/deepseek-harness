@@ -9,8 +9,7 @@
 
 import { app, BrowserWindow, Menu, Notification, shell, type MenuItemConstructorOptions } from 'electron'
 import { autoUpdater } from 'electron-updater'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { registerUpdateIpc } from './ipc.ts'
 import { WebRuntimeSupervisor, type DesktopRuntimePaths } from './runtime.ts'
 import {
@@ -26,7 +25,9 @@ import type { UpdateSnapshot } from '../shared/update-state.ts'
 /** Dev mode runs the harness from the repository checkout instead of resources. */
 const dev = !app.isPackaged
 
-const here = dirname(fileURLToPath(import.meta.url))
+// The esbuild bundle is CJS, so __dirname locates the preload script and, in
+// dev mode, the repository checkout around it.
+const here = __dirname
 const preloadPath = join(here, '..', 'preload', 'index.cjs')
 const repoRoot = join(here, '..', '..', '..', '..')
 

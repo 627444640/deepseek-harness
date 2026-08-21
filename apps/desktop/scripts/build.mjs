@@ -6,11 +6,12 @@
 // packs a node_modules tree. The preload must be CJS because sandboxed
 // preloads have no ESM loader.
 import { rmSync } from 'node:fs'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 
 const packageRoot = fileURLToPath(new URL('..', import.meta.url))
-const out = path => fileURLToPath(new URL(path, import.meta.url))
+const out = path => join(packageRoot, path)
 
 rmSync(out('dist-electron'), { recursive: true, force: true })
 
